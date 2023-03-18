@@ -1,0 +1,138 @@
+---
+- name: Instalando dependencias
+  become: true
+  apt:
+    name: "{{item}}"
+    state: present
+    update_cache: yes
+  loop:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - gnupg-agent
+    - software-properties-common
+
+- name: Instalando la clave de docker
+  become: true
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Agregando repositorio de docker
+  become: true
+  apt_repository:
+    repo: deb https://download.docker.com/linux/ubuntu bionic stable
+    state: present
+
+- name: Instalando docker
+  become: true
+  apt:
+    name: "{{item}}"
+    state: latest
+    update_cache: yes
+  loop:
+    - docker-ce
+    - docker-ce-cli
+    - containerd.io  
+
+- name: Activando docker
+  become: true
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Instalando docker-compose desde el repositorio oficial
+  become: true
+  get_url:
+    url : https://github.com/docker/compose/releases/download/v2.2.3/docker-compose-linux-x86_64
+    dest: /usr/local/bin/docker-compose
+    mode: 'u+x,g+x'
+
+- name: Borrar si existe Repositorio
+  become: true
+  shell:
+    cmd: "rm -r -f  /lib/nginx"
+    chdir: /lib
+  ignore_errors: true
+
+- name: Descargando Repositorio
+  become: true
+  shell:
+    cmd: "git clone https://github.com/rodrivallejo/nginx.git"
+    chdir: /lib
+  ignore_errors: true
+
+- name: Borrando certificados
+  become: true
+  file:
+    state: absent
+    path: "/lib/nginx/files/{{item}}"
+  loop:
+    - my.key
+    - my.crt
+    - my.csr
+
+- name: Copiar sh para generar autofirmadas
+  become: true
+  copy:
+    src: "./crts/{{item}}"
+    dest: /lib/nginx/   
+    mode: 0755
+  loop:
+    - cert_ext.cnf
+    - generate-certs.sh
+
+
+- name: Generar certs autofirmados
+  become: true
+  shell:
+    cmd: "sh ./generate-certs.sh"
+    chdir: /lib/nginx/
+  ignore_errors: true 
+
+- name: Copiar todos los archivos nginx para desplegar
+  become: true
+  copy:
+    src: "./crts/{{item}}"
+    dest: /lib/nginx/files   
+    mode: 0755
+  loop:
+    - my.key
+    - my.crt
+    - my.csr 
+
+- name: Crear imagen
+  become: true
+  shell:
+    cmd: "docker build -t nginx ."
+    chdir: /lib/nginx
+  ignore_errors: true 
+
+- name: Poner tag a la imagen
+  become: true
+  shell:
+    cmd: "docker tag nginx {{ docker_serve }}/nginx:casopractico2"
+    chdir: /lib/nginx
+  ignore_errors: true
+
+- name: Docker login
+  become: true
+  shell:
+    cmd: "docker login -u {{ docker_user }} -p {{ docker_pass }} {{ docker_serve }}"
+    chdir: /lib/nginx
+  ignore_errors: true
+
+- name: Docker push
+  become: true
+  shell:
+    cmd: "docker push {{ docker_serve }}/nginx:casopractico2"
+    chdir: /lib/nginx
+  ignore_errors: true
+
+- name: Nginx run
+  become: true
+  shell:
+    cmd: "docker run  -d --rm --name nginx -p 443:443 -p 8090:8090 -e BASIC_AUTH_USERNAME=pepe -e BASIC_AUTH_PASSWORD=1234 -e PROXY_PASS='https://as.com' -e SERVER_NAME=rodrigounir -e PORT=443 {{ docker_serve }}/nginx:casopractico2"
+    chdir: /lib/nginx
+  ignore_errors: true

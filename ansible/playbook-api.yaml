@@ -1,0 +1,9 @@
+---
+
+- name: Configurando api de listar de node y mongo
+  hosts:
+    - aks
+  vars_files:
+    - secrets.yml
+  roles:
+    - kubernetes

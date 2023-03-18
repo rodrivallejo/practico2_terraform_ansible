@@ -1,0 +1,9 @@
+---
+
+- name: Configurando Nginx
+  hosts:
+    - azurevm
+  vars_files:
+    - secrets.yml
+  roles:
+    - nginx

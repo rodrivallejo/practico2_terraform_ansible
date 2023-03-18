@@ -1,0 +1,76 @@
+---
+- name: install azure-cli
+  become: true
+  shell:
+    cmd: "apt install azure-cli -y"
+    chdir: /lib/nginx
+  ignore_errors: true 
+ 
+- name: Copiar aplicacion en la maquina
+  become: true
+  copy:
+    src: "../../../../node-mongo"
+    dest: /lib  
+    mode: 0755
+ 
+- name: Docker login 
+  become: true
+  shell:
+    cmd: "docker login -u {{ docker_user }} -p {{ docker_pass }} {{ docker_serve }}"
+    chdir: /lib/docker-node-mongo 
+  ignore_errors: true
+
+
+- name: Construir imagen que hemos copiado para subir a container registry y luego
+  become: true
+  shell:
+    cmd: "docker build -t app ."
+    chdir: /lib/docker-node-mongo
+  ignore_errors: true 
+
+- name: Poner tag a la imagen
+  become: true
+  shell:
+    cmd: "docker tag app {{ docker_serve }}/app:casopractico2"
+    chdir: /lib/docker-node-mongo
+  ignore_errors: true
+
+- name: Subir la Imagen construida azure container registry
+  become: true
+  shell:
+    cmd: "docker push {{ docker_serve }}/app:casopractico2"
+    chdir: /lib/docker-node-mongo
+  
+
+- name: Nos logueamos en azure
+  shell: az login -u {{ az_user }} -p {{ az_pass }}
+  args:
+    executable: /bin/bash
+
+
+- name: Configure kubectl para desplegar la api
+  shell: az aks get-credentials --resource-group {{ resource_group_name }} --name {{ aks_name }}
+  args:
+    executable: /bin/bash
+
+- name: Configure borramos secrets
+  shell: kubectl delete secret  registry-creds
+  args:
+    executable: /bin/bash
+  ignore_errors: true
+
+- name: Creamos secret para el manifiesto
+  shell: kubectl create secret docker-registry registry-creds --docker-server={{ docker_serve }} --docker-username={{ docker_user }} --docker-password={{ docker_pass }}
+  args:
+    executable: /bin/bash
+
+- name: Borramos si hubiera deployments
+  shell: kubectl delete -f /lib/node-mongo/app.yaml
+  args:
+    executable: /bin/bash
+
+- name: Creamos deployments 
+  shell: kubectl apply -f /lib/node-mongo/app.yaml
+  args:
+    executable: /bin/bash
+
